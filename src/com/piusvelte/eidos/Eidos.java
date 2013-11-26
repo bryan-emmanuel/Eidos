@@ -27,16 +27,21 @@ import java.util.List;
 import android.app.backup.BackupAgentHelper;
 import android.app.backup.BackupDataInput;
 import android.app.backup.BackupDataOutput;
+import android.app.backup.BackupManager;
 import android.app.backup.FileBackupHelper;
+import android.app.backup.RestoreObserver;
 import android.app.backup.SharedPreferencesBackupHelper;
+import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 
-public class EidosBackupHelper extends BackupAgentHelper {
+public class Eidos extends BackupAgentHelper {
 
 	private static final String SHARED_PREFS = "shared_prefs";
 	private static final String BACKUP_FILES_KEY = "files";
 	private static final String BACKUP_SHARED_PREFS_KEY = SHARED_PREFS;
+	private static final String DATABASE = "database";
 
 	public static final Object DatabaseLock = new Object();
 
@@ -50,20 +55,15 @@ public class EidosBackupHelper extends BackupAgentHelper {
 			File[] dataFiles = dataDirectory.listFiles();
 
 			if (dataFiles != null) {
-				final String parentDirectory = ".";
-
 				for (File dataFile : dataFiles) {
-					String currentDirectory = parentDirectory + File.separator
-							+ dataFile.getName();
-
 					if (dataFile.isFile()) {
-						backupFiles.add(currentDirectory);
+						backupFiles.add(dataFile.getPath());
 					} else if (dataFile.isDirectory()) {
 						if (SHARED_PREFS.equals(dataFile.getName())) {
-							getSharedPrefs(currentDirectory, dataFile,
+							getSharedPrefs(dataFile.getPath(), dataFile,
 									backupSharedPrefs);
 						} else {
-							getBackupFiles(currentDirectory, dataFile,
+							getBackupFiles(dataFile.getPath(), dataFile,
 									backupFiles);
 						}
 					}
@@ -71,8 +71,10 @@ public class EidosBackupHelper extends BackupAgentHelper {
 			}
 		}
 
-		addHelper(BACKUP_FILES_KEY, new FileBackupHelper(this, (String[]) backupFiles.toArray()));
-		addHelper(BACKUP_SHARED_PREFS_KEY, new SharedPreferencesBackupHelper(this, (String[]) backupSharedPrefs.toArray()));
+		addHelper(BACKUP_FILES_KEY, new FileBackupHelper(this,
+				(String[]) backupFiles.toArray()));
+		addHelper(BACKUP_SHARED_PREFS_KEY, new SharedPreferencesBackupHelper(
+				this, (String[]) backupSharedPrefs.toArray()));
 	}
 
 	private void getBackupFiles(String parentDirectory, File file,
@@ -109,11 +111,59 @@ public class EidosBackupHelper extends BackupAgentHelper {
 		}
 	}
 
+	private boolean areDatabasesInUse() {
+		File dataDirectory = Environment.getDataDirectory();
+
+		if (dataDirectory != null && dataDirectory.isDirectory()) {
+			File[] dataFiles = dataDirectory.listFiles();
+
+			if (dataFiles != null) {
+
+				for (File dataFile : dataFiles) {
+					if (DATABASE.equals(dataFile.getName())) {
+						if (dataFile.isDirectory()) {
+							File[] databases = dataFile.listFiles();
+
+							if (databases != null) {
+								for (File database : databases) {
+
+									if (database.isFile()) {
+										SQLiteDatabase db = SQLiteDatabase
+												.openDatabase(
+														database.getPath(),
+														null,
+														SQLiteDatabase.OPEN_READWRITE);
+
+										if (db.isOpen() && db.isReadOnly()) {
+											db.close();
+
+											throw new RuntimeException(
+													"Database: "
+															+ database
+																	.getName()
+															+ " in use, unsafe to perform backup functions");
+										}
+									}
+								}
+							}
+						}
+
+						break;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
 	@Override
 	public void onBackup(ParcelFileDescriptor oldState, BackupDataOutput data,
 			ParcelFileDescriptor newState) throws IOException {
 		synchronized (DatabaseLock) {
-			super.onBackup(oldState, data, newState);
+			if (!areDatabasesInUse()) {
+				super.onBackup(oldState, data, newState);
+			}
 		}
 	}
 
@@ -121,8 +171,22 @@ public class EidosBackupHelper extends BackupAgentHelper {
 	public void onRestore(BackupDataInput data, int appVersionCode,
 			ParcelFileDescriptor newState) throws IOException {
 		synchronized (DatabaseLock) {
-			super.onRestore(data, appVersionCode, newState);
+			if (!areDatabasesInUse()) {
+				super.onRestore(data, appVersionCode, newState);
+			}
 		}
+	}
+
+	public static void requestBackup(Context context) {
+		(new BackupManager(context.getApplicationContext())).dataChanged();
+	}
+
+	public static void requestRestore(Context context) {
+		requestRestore(context, new RestoreObserver() {});
+	}
+
+	public static void requestRestore(Context context, RestoreObserver observer) {
+		(new BackupManager(context.getApplicationContext())).requestRestore(observer);
 	}
 
 }
