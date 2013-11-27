@@ -143,6 +143,8 @@ public class Eidos extends BackupAgentHelper {
 																	.getName()
 															+ " in use, unsafe to perform backup functions");
 										}
+
+										db.close();
 									}
 								}
 							}
