@@ -32,19 +32,29 @@ import android.app.backup.FileBackupHelper;
 import android.app.backup.RestoreObserver;
 import android.app.backup.SharedPreferencesBackupHelper;
 import android.content.Context;
-import android.database.sqlite.SQLiteDatabase;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 
+/**
+ * Eidos provides simple backup, including everything under an applications data directory
+ * @author bemmanuel
+ *
+ */
 public class Eidos extends BackupAgentHelper {
 
 	private static final String SHARED_PREFS = "shared_prefs";
 	private static final String BACKUP_FILES_KEY = "files";
 	private static final String BACKUP_SHARED_PREFS_KEY = SHARED_PREFS;
-	private static final String DATABASE = "database";
 
+	/**
+	 * DatabaseLock should be used for synchronizing SQLiteDatabase access to
+	 * avoid data corruption If no databases are used, this can be ignored.
+	 */
 	public static final Object DatabaseLock = new Object();
 
+	/**
+	 * Collect all SharedPrefs, and other Files, and add them to the backup helpers
+	 */
 	@Override
 	public void onCreate() {
 		File dataDirectory = Environment.getDataDirectory();
@@ -103,7 +113,6 @@ public class Eidos extends BackupAgentHelper {
 		File[] files = sharedPrefs.listFiles();
 
 		if (files != null) {
-
 			for (File f : files) {
 				backupSharedPrefs.add(parentDirectory + File.separator
 						+ f.getName());
@@ -111,84 +120,57 @@ public class Eidos extends BackupAgentHelper {
 		}
 	}
 
-	private boolean areDatabasesInUse() {
-		File dataDirectory = Environment.getDataDirectory();
-
-		if (dataDirectory != null && dataDirectory.isDirectory()) {
-			File[] dataFiles = dataDirectory.listFiles();
-
-			if (dataFiles != null) {
-
-				for (File dataFile : dataFiles) {
-					if (DATABASE.equals(dataFile.getName())) {
-						if (dataFile.isDirectory()) {
-							File[] databases = dataFile.listFiles();
-
-							if (databases != null) {
-								for (File database : databases) {
-
-									if (database.isFile()) {
-										SQLiteDatabase db = SQLiteDatabase
-												.openDatabase(
-														database.getPath(),
-														null,
-														SQLiteDatabase.OPEN_READWRITE);
-
-										if (db.isOpen() && db.isReadOnly()) {
-											db.close();
-
-											throw new RuntimeException(
-													"Database: "
-															+ database
-																	.getName()
-															+ " in use, unsafe to perform backup functions");
-										}
-
-										db.close();
-									}
-								}
-							}
-						}
-
-						break;
-					}
-				}
-			}
-		}
-
-		return false;
-	}
-
+	/**
+	 * Override onBackup to support synchronizing database access to avoid data
+	 * corruption
+	 */
 	@Override
 	public void onBackup(ParcelFileDescriptor oldState, BackupDataOutput data,
 			ParcelFileDescriptor newState) throws IOException {
 		synchronized (DatabaseLock) {
-			if (!areDatabasesInUse()) {
-				super.onBackup(oldState, data, newState);
-			}
+			super.onBackup(oldState, data, newState);
 		}
 	}
 
+	/**
+	 * Override onRestore to support synchronizing database access to avoid data
+	 * corruption
+	 */
 	@Override
 	public void onRestore(BackupDataInput data, int appVersionCode,
 			ParcelFileDescriptor newState) throws IOException {
 		synchronized (DatabaseLock) {
-			if (!areDatabasesInUse()) {
-				super.onRestore(data, appVersionCode, newState);
-			}
+			super.onRestore(data, appVersionCode, newState);
 		}
 	}
 
+	/**
+	 * Convenience method for requesting a backup
+	 *
+	 * @param context
+	 */
 	public static void requestBackup(Context context) {
 		(new BackupManager(context.getApplicationContext())).dataChanged();
 	}
 
+	/**
+	 * Convenience method for requesting a restore, ignoring an observer
+	 *
+	 * @param context
+	 */
 	public static void requestRestore(Context context) {
-		requestRestore(context, new RestoreObserver() {});
+		requestRestore(context, new RestoreObserver() {
+		});
 	}
 
+	/**
+	 * Convenience method for requesting a restore, with an observer
+	 *
+	 * @param context
+	 */
 	public static void requestRestore(Context context, RestoreObserver observer) {
-		(new BackupManager(context.getApplicationContext())).requestRestore(observer);
+		(new BackupManager(context.getApplicationContext()))
+				.requestRestore(observer);
 	}
 
 }
