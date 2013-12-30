@@ -36,7 +36,9 @@ import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 
 /**
- * Eidos provides simple backup, including everything under an applications data directory
+ * Eidos provides simple backup, including everything under an applications data
+ * directory
+ *
  * @author bemmanuel
  *
  */
@@ -53,16 +55,17 @@ public class Eidos extends BackupAgentHelper {
 	public static final Object DatabaseLock = new Object();
 
 	/**
-	 * Collect all SharedPrefs, and other Files, and add them to the backup helpers
+	 * Collect all SharedPrefs, and other Files, and add them to the backup
+	 * helpers
 	 */
 	@Override
 	public void onCreate() {
-		File dataDirectory = Environment.getDataDirectory();
-		List<String> backupFiles = new ArrayList<String>();
-		List<String> backupSharedPrefs = new ArrayList<String>();
+		final File dataDirectory = Environment.getDataDirectory();
+		final List<String> backupFiles = new ArrayList<String>();
+		final List<String> backupSharedPrefs = new ArrayList<String>();
 
 		if (dataDirectory != null && dataDirectory.isDirectory()) {
-			File[] dataFiles = dataDirectory.listFiles();
+			final File[] dataFiles = dataDirectory.listFiles();
 
 			if (dataFiles != null) {
 				for (File dataFile : dataFiles) {
@@ -70,11 +73,9 @@ public class Eidos extends BackupAgentHelper {
 						backupFiles.add(dataFile.getPath());
 					} else if (dataFile.isDirectory()) {
 						if (SHARED_PREFS.equals(dataFile.getName())) {
-							getSharedPrefs(dataFile.getPath(), dataFile,
-									backupSharedPrefs);
+							addFiles(dataFile, backupSharedPrefs);
 						} else {
-							getBackupFiles(dataFile.getPath(), dataFile,
-									backupFiles);
+							addFiles(dataFile, backupFiles);
 						}
 					}
 				}
@@ -87,35 +88,18 @@ public class Eidos extends BackupAgentHelper {
 				this, (String[]) backupSharedPrefs.toArray()));
 	}
 
-	private void getBackupFiles(String parentDirectory, File file,
-			List<String> backupFiles) {
-		if (file != null) {
-			if (file.isFile()) {
-				backupFiles.add(parentDirectory + File.separator
-						+ file.getName());
-			} else if (file.isDirectory()) {
-				File[] files = file.listFiles();
+	private void addFiles(File parent, List<String> backupFiles) {
+		if (parent != null) {
+			if (parent.isFile()) {
+				backupFiles.add(parent.getPath());
+			} else if (parent.isDirectory()) {
+				final File[] children = parent.listFiles();
 
-				if (files != null) {
-					final String currentDirectory = parentDirectory
-							+ File.separator + file.getName();
-
-					for (File f : files) {
-						getBackupFiles(currentDirectory, f, backupFiles);
+				if (children != null) {
+					for (File child : children) {
+						addFiles(child, backupFiles);
 					}
 				}
-			}
-		}
-	}
-
-	private void getSharedPrefs(String parentDirectory, File sharedPrefs,
-			List<String> backupSharedPrefs) {
-		File[] files = sharedPrefs.listFiles();
-
-		if (files != null) {
-			for (File f : files) {
-				backupSharedPrefs.add(parentDirectory + File.separator
-						+ f.getName());
 			}
 		}
 	}
