@@ -82,10 +82,8 @@ public class Eidos extends BackupAgentHelper {
 			}
 		}
 
-		addHelper(BACKUP_FILES_KEY, new FileBackupHelper(this,
-				(String[]) backupFiles.toArray()));
-		addHelper(BACKUP_SHARED_PREFS_KEY, new SharedPreferencesBackupHelper(
-				this, (String[]) backupSharedPrefs.toArray()));
+		addHelper(BACKUP_FILES_KEY, new FileBackupHelper(this, backupFiles.toArray(new String[backupFiles.size()])));
+		addHelper(BACKUP_SHARED_PREFS_KEY, new SharedPreferencesBackupHelper(this, backupSharedPrefs.toArray(new String[backupSharedPrefs.size()])));
 	}
 
 	private void addFiles(File parent, List<String> backupFiles) {
