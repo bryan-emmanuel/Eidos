@@ -47,10 +47,10 @@ import org.w3c.dom.Text;
 public class Eidos extends BackupAgentHelper {
 
     private static final String SHARED_PREFS = "shared_prefs";
-    private static final String BACKUP_FILES_KEY = "files";
+    private static final String DATABASES = "databases";
+    private static final String FILES = "files";
     /** the FileBackupHelper requires files with a path relative to the directory returned from getFilesDir */
     private static final String PATH_PARENT = "..";
-    private static final String BACKUP_SHARED_PREFS_KEY = SHARED_PREFS;
 
     /**
      * DatabaseLock should be used for synchronizing SQLiteDatabase access to
@@ -72,9 +72,7 @@ public class Eidos extends BackupAgentHelper {
             final File[] dataFiles = dataDirectory.listFiles();
             if (dataFiles != null) {
                 for (File dataFile : dataFiles) {
-                    if (dataFile.isFile()) {
-                        backupFiles.add(PATH_PARENT + File.separator + dataFile.getName());
-                    } else if (dataFile.isDirectory()) {
+                    if (dataFile.isDirectory()) {
                         if (SHARED_PREFS.equals(dataFile.getName())) {
                             if (dataFile.isDirectory()) {
                                 final File[] preferencesFiles = dataFile.listFiles();
@@ -84,7 +82,9 @@ public class Eidos extends BackupAgentHelper {
                                     }
                                 }
                             }
-                        } else {
+                        } else if (FILES.equals(dataFile.getName())) {
+                            addFiles("", dataFile, backupFiles);
+                        } else if (DATABASES.equals(dataFile.getName())) {
                             addFiles(PATH_PARENT, dataFile, backupFiles);
                         }
                     }
@@ -92,21 +92,14 @@ public class Eidos extends BackupAgentHelper {
             }
         }
 
-        addHelper(BACKUP_FILES_KEY, new FileBackupHelper(this, backupFiles.toArray(new String[backupFiles.size()])));
-        addHelper(BACKUP_SHARED_PREFS_KEY, new SharedPreferencesBackupHelper(this, backupSharedPrefs.toArray(new String[backupSharedPrefs.size()])));
+        addHelper(FILES, new FileBackupHelper(this, backupFiles.toArray(new String[backupFiles.size()])));
+        addHelper(SHARED_PREFS, new SharedPreferencesBackupHelper(this, backupSharedPrefs.toArray(new String[backupSharedPrefs.size()])));
     }
 
     private void addFiles(String relativePath, File file, List<String> backupFiles) {
         if (file != null) {
-            if (TextUtils.isEmpty(relativePath)) {
-                // if empty, this is a file in the files directory, and should just use the name for backup
-                relativePath = file.getName();
-            } else if (BACKUP_FILES_KEY.equals(file.getName())) {
-                // FileBackupHelper requires paths relative to the files directory, so clear the relative path
-                relativePath = "";
-            } else {
-                relativePath += File.separator + file.getName();
-            }
+            if (!TextUtils.isEmpty(relativePath)) relativePath += File.separator;
+            relativePath += file.getName();
 
             if (file.isFile()) {
                 backupFiles.add(relativePath);
