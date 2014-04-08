@@ -34,125 +34,144 @@ import android.app.backup.SharedPreferencesBackupHelper;
 import android.content.Context;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
+import android.text.TextUtils;
+
+import org.w3c.dom.Text;
 
 /**
  * Eidos provides simple backup, including everything under an applications data
  * directory
  *
  * @author bemmanuel
- *
  */
 public class Eidos extends BackupAgentHelper {
 
-	private static final String SHARED_PREFS = "shared_prefs";
-	private static final String BACKUP_FILES_KEY = "files";
-	private static final String BACKUP_SHARED_PREFS_KEY = SHARED_PREFS;
+    private static final String SHARED_PREFS = "shared_prefs";
+    private static final String BACKUP_FILES_KEY = "files";
+    /** the FileBackupHelper requires files with a path relative to the directory returned from getFilesDir */
+    private static final String PATH_PARENT = "..";
+    private static final String BACKUP_SHARED_PREFS_KEY = SHARED_PREFS;
 
-	/**
-	 * DatabaseLock should be used for synchronizing SQLiteDatabase access to
-	 * avoid data corruption If no databases are used, this can be ignored.
-	 */
-	public static final Object DatabaseLock = new Object();
+    /**
+     * DatabaseLock should be used for synchronizing SQLiteDatabase access to
+     * avoid data corruption If no databases are used, this can be ignored.
+     */
+    public static final Object DatabaseLock = new Object();
 
-	/**
-	 * Collect all SharedPrefs, and other Files, and add them to the backup
-	 * helpers
-	 */
-	@Override
-	public void onCreate() {
-		final File dataDirectory = Environment.getDataDirectory();
-		final List<String> backupFiles = new ArrayList<String>();
-		final List<String> backupSharedPrefs = new ArrayList<String>();
+    /**
+     * Collect all SharedPrefs, and other Files, and add them to the backup
+     * helpers
+     */
+    @Override
+    public void onCreate() {
+        final File dataDirectory = new File(getApplicationInfo().dataDir);
+        final List<String> backupFiles = new ArrayList<String>();
+        final List<String> backupSharedPrefs = new ArrayList<String>();
 
-		if (dataDirectory != null && dataDirectory.isDirectory()) {
-			final File[] dataFiles = dataDirectory.listFiles();
+        if (dataDirectory.exists() && dataDirectory.isDirectory()) {
+            final File[] dataFiles = dataDirectory.listFiles();
+            if (dataFiles != null) {
+                for (File dataFile : dataFiles) {
+                    if (dataFile.isFile()) {
+                        backupFiles.add(PATH_PARENT + File.separator + dataFile.getName());
+                    } else if (dataFile.isDirectory()) {
+                        if (SHARED_PREFS.equals(dataFile.getName())) {
+                            if (dataFile.isDirectory()) {
+                                final File[] preferencesFiles = dataFile.listFiles();
+                                if (preferencesFiles != null) {
+                                    for (File preferenceFile : preferencesFiles) {
+                                        backupSharedPrefs.add(preferenceFile.getName());
+                                    }
+                                }
+                            }
+                        } else {
+                            addFiles(PATH_PARENT, dataFile, backupFiles);
+                        }
+                    }
+                }
+            }
+        }
 
-			if (dataFiles != null) {
-				for (File dataFile : dataFiles) {
-					if (dataFile.isFile()) {
-						backupFiles.add(dataFile.getPath());
-					} else if (dataFile.isDirectory()) {
-						if (SHARED_PREFS.equals(dataFile.getName())) {
-							addFiles(dataFile, backupSharedPrefs);
-						} else {
-							addFiles(dataFile, backupFiles);
-						}
-					}
-				}
-			}
-		}
+        addHelper(BACKUP_FILES_KEY, new FileBackupHelper(this, backupFiles.toArray(new String[backupFiles.size()])));
+        addHelper(BACKUP_SHARED_PREFS_KEY, new SharedPreferencesBackupHelper(this, backupSharedPrefs.toArray(new String[backupSharedPrefs.size()])));
+    }
 
-		addHelper(BACKUP_FILES_KEY, new FileBackupHelper(this, backupFiles.toArray(new String[backupFiles.size()])));
-		addHelper(BACKUP_SHARED_PREFS_KEY, new SharedPreferencesBackupHelper(this, backupSharedPrefs.toArray(new String[backupSharedPrefs.size()])));
-	}
+    private void addFiles(String relativePath, File file, List<String> backupFiles) {
+        if (file != null) {
+            if (TextUtils.isEmpty(relativePath)) {
+                // if empty, this is a file in the files directory, and should just use the name for backup
+                relativePath = file.getName();
+            } else if (BACKUP_FILES_KEY.equals(file.getName())) {
+                // FileBackupHelper requires paths relative to the files directory, so clear the relative path
+                relativePath = "";
+            } else {
+                relativePath += File.separator + file.getName();
+            }
 
-	private void addFiles(File parent, List<String> backupFiles) {
-		if (parent != null) {
-			if (parent.isFile()) {
-				backupFiles.add(parent.getPath());
-			} else if (parent.isDirectory()) {
-				final File[] children = parent.listFiles();
+            if (file.isFile()) {
+                backupFiles.add(relativePath);
+            } else if (file.isDirectory()) {
+                final File[] children = file.listFiles();
 
-				if (children != null) {
-					for (File child : children) {
-						addFiles(child, backupFiles);
-					}
-				}
-			}
-		}
-	}
+                if (children != null) {
+                    for (File child : children) {
+                        addFiles(relativePath, child, backupFiles);
+                    }
+                }
+            }
+        }
+    }
 
-	/**
-	 * Override onBackup to support synchronizing database access to avoid data
-	 * corruption
-	 */
-	@Override
-	public void onBackup(ParcelFileDescriptor oldState, BackupDataOutput data,
-			ParcelFileDescriptor newState) throws IOException {
-		synchronized (DatabaseLock) {
-			super.onBackup(oldState, data, newState);
-		}
-	}
+    /**
+     * Override onBackup to support synchronizing database access to avoid data
+     * corruption
+     */
+    @Override
+    public void onBackup(ParcelFileDescriptor oldState, BackupDataOutput data,
+            ParcelFileDescriptor newState) throws IOException {
+        synchronized (DatabaseLock) {
+            super.onBackup(oldState, data, newState);
+        }
+    }
 
-	/**
-	 * Override onRestore to support synchronizing database access to avoid data
-	 * corruption
-	 */
-	@Override
-	public void onRestore(BackupDataInput data, int appVersionCode,
-			ParcelFileDescriptor newState) throws IOException {
-		synchronized (DatabaseLock) {
-			super.onRestore(data, appVersionCode, newState);
-		}
-	}
+    /**
+     * Override onRestore to support synchronizing database access to avoid data
+     * corruption
+     */
+    @Override
+    public void onRestore(BackupDataInput data, int appVersionCode,
+            ParcelFileDescriptor newState) throws IOException {
+        synchronized (DatabaseLock) {
+            super.onRestore(data, appVersionCode, newState);
+        }
+    }
 
-	/**
-	 * Convenience method for requesting a backup
-	 *
-	 * @param context
-	 */
-	public static void requestBackup(Context context) {
-		(new BackupManager(context.getApplicationContext())).dataChanged();
-	}
+    /**
+     * Convenience method for requesting a backup
+     *
+     * @param context
+     */
+    public static void requestBackup(Context context) {
+        (new BackupManager(context.getApplicationContext())).dataChanged();
+    }
 
-	/**
-	 * Convenience method for requesting a restore, ignoring an observer
-	 *
-	 * @param context
-	 */
-	public static void requestRestore(Context context) {
-		requestRestore(context, new RestoreObserver() {
-		});
-	}
+    /**
+     * Convenience method for requesting a restore, ignoring an observer
+     *
+     * @param context
+     */
+    public static void requestRestore(Context context) {
+        requestRestore(context, new RestoreObserver() {
+        });
+    }
 
-	/**
-	 * Convenience method for requesting a restore, with an observer
-	 *
-	 * @param context
-	 */
-	public static void requestRestore(Context context, RestoreObserver observer) {
-		(new BackupManager(context.getApplicationContext()))
-				.requestRestore(observer);
-	}
-
+    /**
+     * Convenience method for requesting a restore, with an observer
+     *
+     * @param context
+     */
+    public static void requestRestore(Context context, RestoreObserver observer) {
+        (new BackupManager(context.getApplicationContext()))
+                .requestRestore(observer);
+    }
 }
