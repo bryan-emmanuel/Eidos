@@ -32,11 +32,8 @@ import android.app.backup.FileBackupHelper;
 import android.app.backup.RestoreObserver;
 import android.app.backup.SharedPreferencesBackupHelper;
 import android.content.Context;
-import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.text.TextUtils;
-
-import org.w3c.dom.Text;
 
 /**
  * Eidos provides simple backup, including everything under an applications data
@@ -46,11 +43,10 @@ import org.w3c.dom.Text;
  */
 public class Eidos extends BackupAgentHelper {
 
-    private static final String SHARED_PREFS = "shared_prefs";
-    private static final String DATABASES = "databases";
-    private static final String FILES = "files";
-    /** the FileBackupHelper requires files with a path relative to the directory returned from getFilesDir */
-    private static final String PATH_PARENT = "..";
+    private static final String TAG = Eidos.class.getSimpleName();
+    private static final String[] BACKUP_PATHS = { "databases", "files" };
+    private static final String BACKUP_KEY_SHARED_PREFS = "shared_prefs";
+    private static final String BACKUP_KEY_FILES = "files";
 
     /**
      * DatabaseLock should be used for synchronizing SQLiteDatabase access to
@@ -64,55 +60,69 @@ public class Eidos extends BackupAgentHelper {
      */
     @Override
     public void onCreate() {
-        final File dataDirectory = new File(getApplicationInfo().dataDir);
-        final List<String> backupFiles = new ArrayList<String>();
-        final List<String> backupSharedPrefs = new ArrayList<String>();
+        final File dataDir = getFilesDir();
 
-        if (dataDirectory.exists() && dataDirectory.isDirectory()) {
-            final File[] dataFiles = dataDirectory.listFiles();
-            if (dataFiles != null) {
-                for (File dataFile : dataFiles) {
-                    if (dataFile.isDirectory()) {
-                        if (SHARED_PREFS.equals(dataFile.getName())) {
-                            if (dataFile.isDirectory()) {
-                                final File[] preferencesFiles = dataFile.listFiles();
-                                if (preferencesFiles != null) {
-                                    for (File preferenceFile : preferencesFiles) {
-                                        backupSharedPrefs.add(preferenceFile.getName());
-                                    }
-                                }
-                            }
-                        } else if (FILES.equals(dataFile.getName())) {
-                            addFiles("", dataFile, backupFiles);
-                        } else if (DATABASES.equals(dataFile.getName())) {
-                            addFiles(PATH_PARENT, dataFile, backupFiles);
-                        }
-                    }
-                }
-            }
+        if (dataDir.exists() && dataDir.isDirectory()) {
+            addSharedPrefsBackup(dataDir);
+            addFilesBackup(dataDir);
         }
-
-        addHelper(FILES, new FileBackupHelper(this, backupFiles.toArray(new String[backupFiles.size()])));
-        addHelper(SHARED_PREFS, new SharedPreferencesBackupHelper(this, backupSharedPrefs.toArray(new String[backupSharedPrefs.size()])));
     }
 
-    private void addFiles(String relativePath, File file, List<String> backupFiles) {
-        if (file != null) {
-            if (!TextUtils.isEmpty(relativePath)) relativePath += File.separator;
-            relativePath += file.getName();
+    private void addSharedPrefsBackup(File dataDir) {
+        final File sharedPrefs = new File(dataDir, BACKUP_KEY_SHARED_PREFS);
+        if (sharedPrefs.exists() && sharedPrefs.isDirectory()) {
+            final List<String> backupSharedPrefs = new ArrayList<String>();
+            final File[] preferences = sharedPrefs.listFiles();
+            if (preferences != null) {
+                for (File preference : preferences) {
+                    // remove the ".xml" extension, as it is added by the SharedPreferencesBackupHelper
+                    String name = preference.getName();
+                    name = name.substring(0, name.length() - 4);
+                    backupSharedPrefs.add(name);
+                }
+            }
 
-            if (file.isFile()) {
-                backupFiles.add(relativePath);
-            } else if (file.isDirectory()) {
-                final File[] children = file.listFiles();
+            String[] files = backupSharedPrefs.toArray(new String[backupSharedPrefs.size()]);
+            SharedPreferencesBackupHelper helper = new SharedPreferencesBackupHelper(this, files);
+            addHelper(BACKUP_KEY_SHARED_PREFS, helper);
+        }
+    }
 
-                if (children != null) {
-                    for (File child : children) {
-                        addFiles(relativePath, child, backupFiles);
-                    }
+    private void addFilesBackup(File dataDir) {
+        final List<String> backupFiles = new ArrayList<String>();
+
+        for (String path : BACKUP_PATHS) {
+            final File backupFile = new File(dataDir, path);
+            if (backupFile.exists() && backupFile.isDirectory()) {
+                addFiles("", backupFile, backupFiles);
+            }
+        }
+
+        String[] files = backupFiles.toArray(new String[backupFiles.size()]);
+        FileBackupHelper helper = new FileBackupHelper(this, files);
+        addHelper(BACKUP_KEY_FILES, helper);
+    }
+
+    private void addFiles(String path, File file, List<String> backupFiles) {
+        if (!TextUtils.isEmpty(path)) path += File.separator;
+        path += file.getName();
+
+        if (file.isFile()) {
+            backupFiles.add(path);
+        } else if (file.isDirectory()) {
+            final File[] children = file.listFiles();
+
+            if (children != null) {
+                for (File child : children) {
+                    addFiles(path, child, backupFiles);
                 }
             }
         }
+    }
+
+    @Override
+    public File getFilesDir() {
+        return new File(getApplicationInfo().dataDir);
     }
 
     /**
@@ -154,8 +164,7 @@ public class Eidos extends BackupAgentHelper {
      * @param context
      */
     public static void requestRestore(Context context) {
-        requestRestore(context, new RestoreObserver() {
-        });
+        requestRestore(context, new RestoreObserver(){});
     }
 
     /**
