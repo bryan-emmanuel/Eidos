@@ -1,0 +1,114 @@
+apply plugin: 'com.android.library'
+
+version = "1.0"
+
+android {
+    compileSdkVersion 22
+    buildToolsVersion "22.0.1"
+
+    defaultConfig {
+        minSdkVersion 8
+        targetSdkVersion 22
+        versionCode 1
+        versionName "${project.version}"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+apply plugin: 'maven-publish'
+
+publishing {
+    publications {
+        "${rootProject.name}"(MavenPublication) {
+            groupId "com.piusvelte.eidos"
+            version project.version
+            artifactId rootProject.name
+
+            artifact("$buildDir/outputs/aar/${project.name}-release.aar")
+            artifact("$buildDir/outputs/aar/${project.name}-release.aar.asc") {
+                classifier = null
+                extension = 'aar.asc'
+            }
+
+            // include dependencies
+            pom.withXml {
+                asNode().appendNode('name', "${rootProject.name}")
+                asNode().appendNode('description', 'Simple Android App Backup')
+                asNode().appendNode('url', 'https://github.com/piusvelte/Eidos')
+
+                def license = asNode().appendNode('licenses').appendNode('license')
+                license.appendNode('name', 'The Apache License, Version 2.0')
+                license.appendNode('url', 'http://www.apache.org/licenses/LICENSE-2.0.txt')
+
+                def developer = asNode().appendNode('developers').appendNode('developer')
+                developer.appendNode('name', 'Bryan Emmanuel')
+                developer.appendNode('email', 'piusvelte@gmail.com')
+                developer.appendNode('organization')
+                developer.appendNode('organizationUrl')
+
+                def scm = asNode().appendNode('scm')
+                scm.appendNode('connection', 'scm:git:git@github.com:piusvelte/Eidos.git')
+                scm.appendNode('developerConnection', 'scm:git:git@github.com:piusvelte/Eidos.git')
+                scm.appendNode('url', 'git@github.com:piusvelte/Eidos.git')
+
+                def dependenciesNode = asNode().appendNode('dependencies')
+                project.configurations.compile.allDependencies.each { dep ->
+                    // fabric returns null for these values, so skip it
+                    if (dep.group?.trim() && dep.name?.trim() && dep.version?.trim()) {
+                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', dep.group)
+                        dependencyNode.appendNode('artifactId', dep.name)
+                        dependencyNode.appendNode('version', dep.version)
+
+                        if (dep.group.equals('com.mopub.sdk.android')) {
+                            dependencyNode.appendNode('classifier', 'open-source')
+                            dependencyNode.appendNode('type', 'aar')
+                            dependencyNode.appendNode('scope', 'provided')
+                        } else if (dep.group.equals('com.android.support')) {
+                            dependencyNode.appendNode('scope', 'provided')
+                        }
+                    }
+                }
+            }
+
+            artifact("$buildDir/publications/${rootProject.name}/${rootProject.name}-${project.version}.pom.asc") {
+                classifier = null
+                extension = 'pom.asc'
+            }
+        }
+    }
+
+    repositories {
+    }
+}
+
+apply plugin: 'signing'
+
+def pgpsigning = System.properties['user.home'] + '/.signing/pgp-signing.gradle';
+if (new File(pgpsigning).exists()) {
+    apply from: pgpsigning
+}
+
+task signPom(type: Sign) {
+    file("$buildDir/publications/${rootProject.name}/pom-default.xml").renameTo(file("$buildDir/publications/${rootProject.name}/${rootProject.name}-${project.version}.pom"))
+    sign file("$buildDir/publications/${rootProject.name}/${rootProject.name}-${project.version}.pom")
+}
+
+task signAar(type: Sign) {
+    sign file("$buildDir/outputs/aar/${project.name}-release.aar")
+}
+
+model {
+    tasks.signPom {
+        dependsOn 'generatePomFileForEidosPublication'
+    }
+
+    tasks.signAar {
+        dependsOn 'assembleRelease'
+    }
+}
